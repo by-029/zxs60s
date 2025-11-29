@@ -1,0 +1,6 @@
+name: astrbot_plugin_ zxs60s 
+desc:  基于走小散远程API接口开发的直接显示晨报图的一款插件。
+help: 指令：/今日简报 
+version: v2.1 
+author: 走小散
+undefined：https://github.com/by-029/zxs60s
