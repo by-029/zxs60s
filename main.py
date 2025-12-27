@@ -257,6 +257,30 @@ class MyPlugin(Star):
             yield event.plain_result("本群组定时发送已取消")
         else:
             yield event.plain_result("本群组未设置发送时间")
+    
+    @filter.command("zxs_clean")
+    async def clean_inactive_schedules(self, event: AstrMessageEvent):
+        '''清理所有无效的定时任务（已保存但未激活的任务）'''
+        # 找出所有无效任务（只有time但没有target的）
+        inactive_count = 0
+        to_remove = []
+        for group_id, schedule_info in self.group_schedules.items():
+            time_str = schedule_info.get('time')
+            target = schedule_info.get('target')
+            if time_str and not target:
+                to_remove.append(group_id)
+                inactive_count += 1
+        
+        if inactive_count == 0:
+            yield event.plain_result("没有需要清理的无效定时任务")
+            return
+        
+        # 删除无效任务
+        for group_id in to_remove:
+            del self.group_schedules[group_id]
+        
+        self.save_schedule()
+        yield event.plain_result(f"已清理 {inactive_count} 个无效的定时任务")
 
     @filter.command("zxs_test")
     async def execute_now(self, event: AstrMessageEvent):
@@ -325,6 +349,7 @@ class MyPlugin(Star):
 /gg_tasks             - 切换全局定时任务开关（启用/禁用）
 /zxs_doc [序号]        - 查看定时任务列表
                         例如：/zxs_doc 或 /zxs_doc 1,2,3
+/zxs_clean            - 清理所有无效的定时任务（已保存但未激活的）
 
 🔹 配置功能：
 /zxs_timezone <时区>   - 设置时区（例如：Asia/Shanghai）
@@ -332,7 +357,8 @@ class MyPlugin(Star):
 💡 提示：
 - 定时任务只在工作日发送（节假日自动跳过）
 - 每个群组可以独立设置发送时间
-- 默认时区为 Asia/Shanghai"""
+- 默认时区为 Asia/Shanghai
+- 如果发现自动发送，请使用 /zxs_doc 查看任务列表"""
         yield event.plain_result(help_text)
 
     @filter.command("zxs_doc")
@@ -343,23 +369,47 @@ class MyPlugin(Star):
         """
         # 过滤出有效的定时任务（有时间设置的）
         valid_schedules = []
+        inactive_schedules = []  # 记录无效的任务（只有时间但没有target）
         for group_id, schedule_info in self.group_schedules.items():
             time_str = schedule_info.get('time')
             target = schedule_info.get('target')
             if time_str:  # 只显示已设置时间的任务
-                valid_schedules.append({
-                    'group_id': group_id,
-                    'time': time_str,
-                    'target': target
-                })
+                if target:  # 有target的是有效任务
+                    valid_schedules.append({
+                        'group_id': group_id,
+                        'time': time_str,
+                        'target': target
+                    })
+                else:  # 没有target的是无效任务（可能是从文件加载但target为None）
+                    inactive_schedules.append({
+                        'group_id': group_id,
+                        'time': time_str
+                    })
+        
+        # 显示警告信息（如果有无效任务）
+        warning_msg = ""
+        if inactive_schedules:
+            warning_msg = f"⚠️ 发现 {len(inactive_schedules)} 个无效的定时任务（已保存但未激活，不会发送）：\n"
+            for idx, schedule in enumerate(inactive_schedules, 1):
+                display_id = schedule['group_id'] if len(str(schedule['group_id'])) <= 30 else str(schedule['group_id'])[:27] + "..."
+                warning_msg += f"  {idx}. {display_id} - {schedule['time']}\n"
+            warning_msg += "\n💡 可以在对应群组使用 /cl_time 清除这些无效任务\n\n"
+        
+        if not valid_schedules and not inactive_schedules:
+            yield event.plain_result("当前没有配置任何定时任务")
+            return
         
         if not valid_schedules:
-            yield event.plain_result("当前没有正在运行的定时任务")
+            yield event.plain_result(warning_msg + "当前没有正在运行的定时任务（所有任务都是无效状态）")
             return
         
         # 如果没有提供序号，显示所有任务列表
         if not indices or indices.strip() == "":
-            result_lines = [f"📋 当前共有 {len(valid_schedules)} 个定时任务：\n"]
+            if warning_msg:
+                result_lines = [warning_msg]
+            else:
+                result_lines = []
+            result_lines.append(f"📋 当前共有 {len(valid_schedules)} 个正在运行的定时任务：\n")
             for idx, schedule in enumerate(valid_schedules, 1):
                 group_id = schedule['group_id']
                 time_str = schedule['time']
