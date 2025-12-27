@@ -1,46 +1,36 @@
-# 今日简报插件使用文档
+# 走小散每日简报
 
-## 插件简介
+![](C:\Users\Administrator\Desktop\astrbot_plugin_moyurenpro-master\zxs.png)
 
-这是一个为 AstrBot 开发的今日简报插件，支持快速获取当日精选新闻资讯，提供简洁高效的信息浏览体验。
 
-## 功能特色
 
-📰 一键获取当日精选新闻简报
+# 支持
 
-🔄 自动整合多源新闻内容
+支持自定义时间、时区，自定义api，支持立即发送，工作日定时发送。
 
-📱 简洁排版，便于快速阅读
-
-⚡ 异步请求，响应迅速
-
-## 安装方法
-
-1. 将插件文件夹 放入 AstrBot 的插件目录
-2. 安装依赖（如有需要，插件会提示具体依赖包）
-3. 重启 AstrBot
-
-## 使用方法
-
-### 基本命令
-
-`/今日简报`— 获取当日精选新闻简报
-
-### 使用示例
-
+需安装第三方库[chinese_calendar](https://github.com/LKI/chinese-calendar)，已配置requirements.txt文件自动安装，异常可手动安装
 ```
-/今日简报
+docker exec -it astrbot /bin/bash #docker部署进入astrbot容器，运行bash进行安装
+
+pip install chinesecalendar
 ```
 
-### 返回内容
-
-- 当日重要新闻摘要
-- 分类整理（时事、科技、财经等）
-- 简洁排版，便于快速浏览
-
-## 配置说明
-
-插件无需复杂配置，安装后即可直接使用。
+基础功能
+/zxs_time <时间> - 设置当前群组定时发送时间
+格式：HH:MM 或 HHMM
+示例：/zxs_time 08:00 或 /zxs_time 0800
+/zxs_test - 立即测试发送今日简报
+/zxs_help - 显示所有功能帮助信息（新功能）
+定时任务管理
+/cl_time - 取消当前群组的定时发送
+/gg_tasks - 切换全局定时任务开关（启用/禁用）
+/zxs_doc [序号] - 查看定时任务列表（新功能）
+不带参数：显示所有定时任务简要列表
+带序号：显示指定序号的详细信息
+示例：/zxs_doc 或 /zxs_doc 1,2,3
+配置功能
+/zxs_timezone <时区> - 设置时区
+示例：/zxs_timezone Asia/Shanghai
 
 ## 注意事项
 
@@ -50,7 +40,7 @@
 
 ## 版本信息
 
-- 当前版本：v2.1
+- 当前版本：v5.3.7
 - 作者：走小散
 - 更新日期：2025年12月
 - 微信扫码关注我
