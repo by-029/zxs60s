@@ -5,19 +5,5 @@
         "hint": "",
         "default": true,
         "obvious_hint": true
-    },
-    "zxs_api_url": {
-        "description": "今日简报API地址",
-        "type": "string",
-        "hint": "默认https://know.zousanzy.cn/60/",
-        "default": "",
-        "obvious_hint": true
-    },
-    "default_timezone": {
-        "description": "今日简报表时区",
-        "type": "string",
-        "hint": "默认Asia/Shanghai",
-        "default": "",
-        "obvious_hint": true
     }
 }
