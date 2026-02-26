@@ -9,7 +9,6 @@ import aiohttp
 import os
 import tempfile
 from zoneinfo import ZoneInfo
-import chinese_calendar as calendar
 
 @register("zxs60s", "egg", "今日简报插件，支持定时发送", "2.0.0")
 class MyPlugin(Star):
@@ -27,12 +26,16 @@ class MyPlugin(Star):
         asyncio.get_event_loop().create_task(self.scheduled_task()) 
         
     def get_group_id(self, message_target):
-        """将消息目标转换为可序列化的群组标识"""
         try:
             return str(message_target)
         except:
             return str(message_target)
-    
+
+    def get_origin_str(self, origin):
+        if origin is None:
+            return None
+        return origin if isinstance(origin, str) else str(origin)
+
     def load_schedule(self):
         if not self.enabled:
             return
@@ -44,9 +47,13 @@ class MyPlugin(Star):
                         schedules = data.get('group_schedules', {})
                         self.group_schedules = {}
                         for group_id, schedule_info in schedules.items():
+                            time_str = schedule_info.get('time')
+                            origin_str = schedule_info.get('origin')
+                            target = origin_str if origin_str else None
                             self.group_schedules[group_id] = {
-                                'time': schedule_info.get('time'),
-                                'target': None
+                                'time': time_str,
+                                'target': target,
+                                'origin': origin_str
                             }
                     else:
                         old_time = data.get('user_custom_time')
@@ -56,7 +63,8 @@ class MyPlugin(Star):
                             self.group_schedules = {
                                 group_id: {
                                     'time': old_time,
-                                    'target': None
+                                    'target': None,
+                                    'origin': None
                                 }
                             }
             except Exception as e:
@@ -67,9 +75,11 @@ class MyPlugin(Star):
     def save_schedule(self):
         schedules_to_save = {}
         for group_id, schedule_info in self.group_schedules.items():
-            schedules_to_save[group_id] = {
-                'time': schedule_info.get('time')
-            }
+            item = {'time': schedule_info.get('time')}
+            origin = schedule_info.get('origin') or (self.get_origin_str(schedule_info.get('target')) if schedule_info.get('target') else None)
+            if origin:
+                item['origin'] = origin
+            schedules_to_save[group_id] = item
         data = {'group_schedules': schedules_to_save}
         try:
             with open(self.schedule_file, 'w', encoding='utf-8') as f:
@@ -80,7 +90,6 @@ class MyPlugin(Star):
             logger.error(f"错误详情: {traceback.format_exc()}")
 
     async def get_zxs_image_url(self, session):
-        """从接口获取今日简报图片URL"""
         try:
             async with session.get(self.zxs_api_url) as response:
                 if response.status == 200:
@@ -97,7 +106,6 @@ class MyPlugin(Star):
             return None
     
     async def get_zxs_image(self):
-        """获取今日简报图片URL或本地路径"""
         try:
             async with aiohttp.ClientSession() as session:
                 image_url = await self.get_zxs_image_url(session)
@@ -137,7 +145,6 @@ class MyPlugin(Star):
 
     @filter.command("zxs_time")
     async def set_time(self, event: AstrMessageEvent, time: str):
-        """设置发送今日简报的时间 格式为 HH:MM或HHMM"""
         time = time.strip()
         parsed_time = self.parse_time(time)
         if not parsed_time:
@@ -148,14 +155,14 @@ class MyPlugin(Star):
         if group_id not in self.group_schedules:
             self.group_schedules[group_id] = {}
         
+        origin_str = self.get_origin_str(event.unified_msg_origin)
         self.group_schedules[group_id]['time'] = parsed_time
         self.group_schedules[group_id]['target'] = event.unified_msg_origin
-        
+        self.group_schedules[group_id]['origin'] = origin_str
         yield event.plain_result(f"本群组今日简报发送时间已设置为: {parsed_time}")
         self.save_schedule()
 
     def save_config(self):
-        """保存配置信息到配置文件"""
         try:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             parent_dir = os.path.dirname(current_dir)
@@ -170,12 +177,10 @@ class MyPlugin(Star):
             logger.error(f"保存配置文件时出错: {e}")
 
     async def terminate(self):
-        """关闭定时任务并清理缓存"""
         pass
 
     @filter.command("gg_tasks")
     async def toggle(self, event: AstrMessageEvent):
-        """切换定时任务的启用/禁用状态"""
         self.enabled = not self.enabled
         status = "启用" if self.enabled else "禁用"
         self.config["enabled"] = self.enabled
@@ -186,7 +191,6 @@ class MyPlugin(Star):
 
     @filter.command("cl_time")
     async def reset_time(self, event: AstrMessageEvent):
-        """取消当前群组的定时发送"""
         group_id = self.get_group_id(event.unified_msg_origin)
         if group_id in self.group_schedules:
             del self.group_schedules[group_id]
@@ -197,7 +201,6 @@ class MyPlugin(Star):
 
     @filter.command("zxs_test")
     async def execute_now(self, event: AstrMessageEvent):
-        """立即发送今日简报"""
         image_path = await self.get_zxs_image()
         if not image_path:
             yield event.plain_result("获取今日简报失败，请稍后再试")
@@ -227,7 +230,6 @@ class MyPlugin(Star):
                     yield event.plain_result("发送消息失败，请稍后再试")
 
     def get_next_send_time(self, time_str):
-        """计算下次发送时间"""
         if not time_str:
             return None
         now = datetime.datetime.now(self.user_custom_timezone)
@@ -236,15 +238,12 @@ class MyPlugin(Star):
             target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
             if now > target_time:
                 target_time = target_time + datetime.timedelta(days=1)
-            while not calendar.is_workday(target_time.date()):
-                target_time = target_time + datetime.timedelta(days=1)
             return target_time
         except:
             return None
 
     @filter.command("zxs_doc")
     async def list_tasks(self, event: AstrMessageEvent):
-        """列出所有定时任务"""
         active_tasks = []
         inactive_tasks = []
         
@@ -291,7 +290,6 @@ class MyPlugin(Star):
 
     @filter.command("zxs_doc_del")
     async def delete_task(self, event: AstrMessageEvent, index: str):
-        """删除指定序号的定时任务"""
         try:
             task_index = int(index.strip())
         except ValueError:
@@ -336,7 +334,6 @@ class MyPlugin(Star):
 
     @filter.command("zxs_up")
     async def activate_task(self, event: AstrMessageEvent, index: str):
-        """激活指定序号的未激活定时任务"""
         try:
             task_index = int(index.strip())
         except ValueError:
@@ -369,25 +366,32 @@ class MyPlugin(Star):
             yield event.plain_result("当前没有未激活的定时任务")
             return
         
-        if task_index < len(active_tasks) + 1 or task_index > len(active_tasks) + len(inactive_tasks):
-            yield event.plain_result(f"序号 {task_index} 无效，请选择未激活任务的序号 ({len(active_tasks) + 1} - {len(active_tasks) + len(inactive_tasks)})")
+        valid_start = len(active_tasks) + 1
+        valid_end = len(active_tasks) + len(inactive_tasks)
+        valid_list = list(range(valid_start, valid_end + 1))
+        
+        if task_index < valid_start or task_index > valid_end:
+            yield event.plain_result(f"序号 {task_index} 无效。未激活任务序号为 {valid_start}～{valid_end}，可选: {', '.join(map(str, valid_list))}")
             return
         
-        inactive_index = task_index - len(active_tasks) - 1
+        inactive_index = task_index - valid_start
         group_id_to_activate = inactive_group_ids[inactive_index]
         
         if group_id_to_activate in self.group_schedules:
             current_group_id = self.get_group_id(event.unified_msg_origin)
             time_str = self.group_schedules[group_id_to_activate]['time']
             
+            origin_str = self.get_origin_str(event.unified_msg_origin)
             if group_id_to_activate != current_group_id:
                 self.group_schedules[current_group_id] = {
                     'time': time_str,
-                    'target': event.unified_msg_origin
+                    'target': event.unified_msg_origin,
+                    'origin': origin_str
                 }
                 del self.group_schedules[group_id_to_activate]
             else:
                 self.group_schedules[group_id_to_activate]['target'] = event.unified_msg_origin
+                self.group_schedules[group_id_to_activate]['origin'] = origin_str
             
             self.save_schedule()
             yield event.plain_result(f"已激活序号 {task_index} 的定时任务: {time_str}")
@@ -400,23 +404,12 @@ class MyPlugin(Star):
             return
         logger.info("定时任务开始执行，支持多群组独立时间设置")
         group_last_executed = {}
-        
         while True:
             if not self.enabled:
                 await asyncio.sleep(60)
                 continue
             try:
                 now = datetime.datetime.now(self.user_custom_timezone)
-                is_workday = calendar.is_workday(now.date())
-                
-                if not is_workday:
-                    next_day = now + datetime.timedelta(days=1)
-                    next_day_midnight = next_day.replace(hour=0, minute=0, second=0, microsecond=0)
-                    time_until_next_day = (next_day_midnight - now).total_seconds()
-                    logger.info(f"当前日期 {now.date()} 不是工作日，等待到下一天午夜（{int(time_until_next_day)} 秒）")
-                    await asyncio.sleep(min(time_until_next_day, 3600))
-                    continue
-                
                 groups_to_send = []
                 for group_id, schedule_info in self.group_schedules.items():
                     time_str = schedule_info.get('time')
@@ -479,14 +472,9 @@ class MyPlugin(Star):
                         logger.error("获取今日简报图片失败，跳过本次发送")
                 
                 await asyncio.sleep(60)
-
             except Exception as e:
                 logger.error(f"定时任务出错: {str(e)}")
-                logger.error(f"错误详情: {e.__class__.__name__}")
                 import traceback
-                logger.error(f"堆栈信息: {traceback.format_exc()}")
+                logger.error(traceback.format_exc())
                 await asyncio.sleep(60)
-         
-
-
 
